@@ -31,6 +31,24 @@ export const fetchTasks = async (): Promise<ApiResponse> => {
   }
 };
 
+export const deleteTask = async (id: number): Promise<ApiResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data: ApiResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error deleting task:', error);
+    throw error;
+  }
+};
+
 export const saveNewTask = async (taskData: { title: string; description: string; }): Promise<ApiResponse> => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/tasks`, {

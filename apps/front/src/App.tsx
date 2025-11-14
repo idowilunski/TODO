@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchTasks, ApiResponse, saveNewTask } from './services/api'
+import { fetchTasks, ApiResponse, saveNewTask, deleteTask } from './services/api'
 import AddNewTaskButton from './components/AddNewTaskButton';
 import AddNewTaskDialog from './components/AddNewTaskDialog';
 
@@ -85,7 +85,25 @@ function App() {
                 <input
                   type="checkbox"
                   checked={task.completed}
-                  onChange={() => {/* TODO: Implement update task */}}
+                  onChange={async () => {
+                    // Optimistic remove: remove from UI immediately
+                    setData(prev => {
+                      if (!prev || !prev.data) return prev;
+                      return {
+                        ...prev,
+                        data: prev.data.filter((t: any) => t.id !== task.id),
+                      } as ApiResponse;
+                    });
+
+                    try {
+                      await deleteTask(task.id);
+                    } catch (err) {
+                      console.error('Delete failed, refreshing list', err);
+                      // On failure, re-fetch to restore UI state
+                      const refreshed = await fetchTasks();
+                      setData(refreshed);
+                    }
+                  }}
                   style={{ cursor: 'pointer', marginTop: '4px' }}
                 />
               </div>
