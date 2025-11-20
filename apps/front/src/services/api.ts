@@ -31,6 +31,31 @@ export const fetchTasks = async (): Promise<ApiResponse> => {
   }
 };
 
+export const updateTask = async (
+  id: number,
+  payload: Partial<{ title: string; description: string; completed: boolean }>
+): Promise<ApiResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data: ApiResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error updating task:', error);
+    throw error;
+  }
+};
+
 export const deleteTask = async (id: number): Promise<ApiResponse> => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {

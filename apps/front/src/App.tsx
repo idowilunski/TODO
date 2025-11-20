@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchTasks, ApiResponse, saveNewTask, deleteTask } from './services/api'
+import { fetchTasks, ApiResponse, saveNewTask, deleteTask, updateTask } from './services/api'
 import AddNewTaskButton from './components/AddNewTaskButton';
 import AddNewTaskDialog from './components/AddNewTaskDialog';
 
@@ -16,6 +16,7 @@ function App() {
     // Clear the inputs when closing
     setTaskTitle('');
     setTaskDescription('');
+    setEditingTaskId(null);
   }
 
   const handleOpen = () => {  
@@ -40,10 +41,18 @@ function App() {
 
   const handleSave = async () => {
     try {
-      await saveNewTask({
-        title: taskTitle,
-        description: taskDescription,
-      });
+      if (editingTaskId !== null) {
+        await updateTask(editingTaskId, {
+          title: taskTitle,
+          description: taskDescription,
+        });
+        setEditingTaskId(null);
+      } else {
+        await saveNewTask({
+          title: taskTitle,
+          description: taskDescription,
+        });
+      }
       // Refresh the task list to show the newly created task
       const updatedData = await fetchTasks();
       setData(updatedData);
@@ -52,6 +61,8 @@ function App() {
       console.error('Error saving task:', err);
     }
   };
+
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   return (
     <div className="App" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
       <h1>My amazing TODO app</h1>
@@ -82,30 +93,66 @@ function App() {
                     Created: {new Date(task.created_at).toLocaleString()}
                   </small>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={task.completed}
-                  onChange={async () => {
-                    // Optimistic remove: remove from UI immediately
-                    setData(prev => {
-                      if (!prev || !prev.data) return prev;
-                      return {
-                        ...prev,
-                        data: prev.data.filter((t: any) => t.id !== task.id),
-                      } as ApiResponse;
-                    });
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      // Open dialog for editing
+                      setTaskTitle(task.title);
+                      setTaskDescription(task.description);
+                      setEditingTaskId(task.id);
+                      setOpen(true);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    Update
+                  </button>
+                  <button
+                    onClick={async () => {
+                      // Optimistic mark done
+                      setData(prev => {
+                        if (!prev || !prev.data) return prev;
+                        return {
+                          ...prev,
+                          data: prev.data.map((t: any) => (t.id === task.id ? { ...t, completed: true } : t)),
+                        } as ApiResponse;
+                      });
 
-                    try {
-                      await deleteTask(task.id);
-                    } catch (err) {
-                      console.error('Delete failed, refreshing list', err);
-                      // On failure, re-fetch to restore UI state
-                      const refreshed = await fetchTasks();
-                      setData(refreshed);
-                    }
-                  }}
-                  style={{ cursor: 'pointer', marginTop: '4px' }}
-                />
+                      try {
+                        await updateTask(task.id, { completed: true });
+                      } catch (err) {
+                        console.error('Mark done failed, refreshing list', err);
+                        const refreshed = await fetchTasks();
+                        setData(refreshed);
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    Mark Done
+                  </button>
+                  <button
+                    onClick={async () => {
+                      // Optimistic delete
+                      setData(prev => {
+                        if (!prev || !prev.data) return prev;
+                        return {
+                          ...prev,
+                          data: prev.data.filter((t: any) => t.id !== task.id),
+                        } as ApiResponse;
+                      });
+
+                      try {
+                        await deleteTask(task.id);
+                      } catch (err) {
+                        console.error('Delete failed, refreshing list', err);
+                        const refreshed = await fetchTasks();
+                        setData(refreshed);
+                      }
+                    }}
+                    style={{ cursor: 'pointer', color: 'red' }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))}
