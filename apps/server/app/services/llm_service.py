@@ -6,6 +6,8 @@ import os
 import json
 from abc import ABC, abstractmethod
 from typing import Dict, List
+import difflib
+import logging
 
 
 class LLMProvider(ABC):
@@ -23,6 +25,11 @@ class LLMProvider(ABC):
         Returns:
             Dict mapping category names to lists of task titles
         """
+        pass
+    
+    @abstractmethod
+    def generate_tasks(self, n: int) -> List[Dict[str, str]]:
+        """Generate `n` mock tasks using the provider. Returns list of {title, description}."""
         pass
 
 
@@ -79,6 +86,42 @@ Respond with ONLY the JSON object, no markdown, no extra text:"""
         
         clusters = json.loads(llm_response)
         return clusters
+
+    def generate_tasks(self, n: int) -> List[Dict[str, str]]:
+        """Ask OpenAI to generate `n` realistic task objects as JSON list.
+
+        Returns:
+            List of dicts: [{"title": "...", "description": "..."}, ...]
+        """
+        prompt = f"""You are a task generator. Produce {n} realistic, concise todo tasks.
+Return a JSON array of objects, each with fields `title` and `description`.
+Titles should be short (3-6 words) and unique. Descriptions should be 5-20 words.
+Return ONLY the JSON array, no markdown or explanatory text.
+
+Example:
+[{{"title": "Buy groceries", "description": "Milk, eggs, bread"}}, {{"title": "Fix login bug", "description": "Users cannot reset password"}}]
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=800,
+        )
+
+        llm_response = response.choices[0].message.content.strip()
+        if llm_response.startswith("```"):
+            llm_response = llm_response.split("```")[1]
+            if llm_response.startswith("json"):
+                llm_response = llm_response[4:]
+
+        tasks = json.loads(llm_response)
+        # Basic validation: ensure list of objects with title/description
+        out = []
+        for t in tasks:
+            if isinstance(t, dict) and 'title' in t and 'description' in t:
+                out.append({'title': str(t['title']).strip(), 'description': str(t['description']).strip()})
+        return out
 
 
 class OllamaProvider(LLMProvider):
@@ -140,6 +183,43 @@ Respond with ONLY the JSON object, no markdown, no extra text:"""
         clusters = json.loads(llm_response)
         return clusters
 
+    def generate_tasks(self, n: int) -> List[Dict[str, str]]:
+        """Ask Ollama to generate `n` mock tasks and parse JSON array response."""
+        prompt = f"""You are a task generator. Produce {n} realistic, concise todo tasks.
+Return a JSON array of objects, each with fields `title` and `description`.
+Titles should be short (3-6 words) and unique. Descriptions should be 5-20 words.
+Return ONLY the JSON array, no markdown or explanatory text.
+
+Example:
+[{{"title": "Buy groceries", "description": "Milk, eggs, bread"}}, {{"title": "Fix login bug", "description": "Users cannot reset password"}}]
+"""
+
+        response = self.requests.post(
+            f"{self.base_url}/api/generate",
+            json={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "temperature": 0.7,
+            },
+            timeout=60,
+        )
+
+        response.raise_for_status()
+        result = response.json()
+        llm_response = result.get('response', '').strip()
+        if llm_response.startswith("```"):
+            llm_response = llm_response.split("```")[1]
+            if llm_response.startswith("json"):
+                llm_response = llm_response[4:]
+
+        tasks = json.loads(llm_response)
+        out = []
+        for t in tasks:
+            if isinstance(t, dict) and 'title' in t and 'description' in t:
+                out.append({'title': str(t['title']).strip(), 'description': str(t['description']).strip()})
+        return out
+
 
 class LLMServiceFactory:
     """Factory to create LLM provider based on configuration."""
@@ -191,14 +271,48 @@ class TaskClusteringService:
         
         # Map titles back to task objects
         task_map = {t.title: t for t in tasks}
-        
-        # Build result with task dicts
+
+        # also prepare a lowercase map for case-insensitive checks
+        lower_map = {k.lower(): v for k, v in task_map.items()}
+
+        # Build result with task dicts, using fuzzy matching when needed
         result = {}
+        unmatched = []
         for category, titles in clustered_titles.items():
-            result[category] = [
-                task_map[title].to_dict()
-                for title in titles
-                if title in task_map
-            ]
-        
+            result[category] = []
+            for title in titles:
+                # direct match
+                if title in task_map:
+                    result[category].append(task_map[title].to_dict())
+                    continue
+
+                # case-insensitive exact
+                t_lower = title.lower()
+                if t_lower in lower_map:
+                    result[category].append(lower_map[t_lower].to_dict())
+                    continue
+
+                # substring match (title appears inside task title or vice-versa)
+                found = None
+                for k, task_obj in task_map.items():
+                    if t_lower in k.lower() or k.lower() in t_lower:
+                        found = task_obj
+                        break
+                if found:
+                    result[category].append(found.to_dict())
+                    continue
+
+                # fuzzy match using difflib
+                candidates = difflib.get_close_matches(title, list(task_map.keys()), n=1, cutoff=0.6)
+                if candidates:
+                    match = task_map[candidates[0]]
+                    result[category].append(match.to_dict())
+                    continue
+
+                # nothing matched; record it for debugging
+                unmatched.append(title)
+
+        if unmatched:
+            logging.warning('Unmatched clustered titles (no corresponding task found): %s', unmatched)
+
         return result

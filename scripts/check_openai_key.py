@@ -15,6 +15,14 @@ except ImportError:
     print("openai package not installed. Run: pip install -r apps/server/requirements.txt")
     sys.exit(1)
 
+# Load local .env so this script can read apps/server/.env when run directly
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', 'apps', 'server', '.env'))
+except Exception:
+    # If python-dotenv isn't available or loading fails, we'll continue and let the missing-key check handle it
+    pass
+
 KEY = os.getenv('OPENAI_API_KEY')
 if not KEY:
     print('OPENAI_API_KEY not set in environment. Set it or create apps/server/.env and run run.py')

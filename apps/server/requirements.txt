@@ -12,6 +12,7 @@ SQLAlchemy==2.0.44
 # LLM providers
 openai==1.3.0  # For OpenAI API
 requests==2.31.0  # For Ollama API (optional)
+httpx==0.24.1  # HTTP client required by openai
 
 # Utilities
 python-dotenv==1.2.1

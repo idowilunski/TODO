@@ -144,11 +144,29 @@ def seed_tasks():
         # Delete existing tasks (optional)
         Task.query.delete()
         db.session.commit()
-        
-        mock_tasks = [
-            # Work tasks
-            {"title": "Fix login bug", "description": "Users can't reset password"},
-            {"title": "Code review PR #42", "description": "Review backend changes"},
+
+        # If caller requests LLM-generated tasks, use the configured provider
+        use_llm = request.args.get('source', '').lower() == 'llm'
+        count = int(request.args.get('n', 70))
+        mock_tasks = []
+        if use_llm:
+            try:
+                from app.services.llm_service import LLMServiceFactory
+                provider = LLMServiceFactory.get_provider()
+                generated = provider.generate_tasks(count)
+                # generated is list of {title, description}
+                mock_tasks = generated
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error generating tasks with LLM: {str(e)}'
+                }), 500
+        else:
+            mock_tasks = [
+                # Work tasks
+                {"title": "Fix login bug", "description": "Users can't reset password"},
+                {"title": "Code review PR #42", "description": "Review backend changes"},
             {"title": "Write API docs", "description": "Document new endpoints"},
             {"title": "Update dependencies", "description": "npm update all packages"},
             {"title": "Deploy to staging", "description": "Test build on staging server"},
