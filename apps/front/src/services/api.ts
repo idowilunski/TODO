@@ -94,4 +94,39 @@ export const saveNewTask = async (taskData: { title: string; description: string
     console.error('Error saving new task:', error);
     throw error;
   }
-}
+};
+
+export const seedMockTasks = async (): Promise<ApiResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/seed`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error seeding tasks:', error);
+    throw error;
+  }
+};
+
+export const clusterTasks = async (): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/cluster`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error clustering tasks:', error);
+    throw error;
+  }
+};

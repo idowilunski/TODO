@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchTasks, ApiResponse, saveNewTask, deleteTask, updateTask } from './services/api'
+import { fetchTasks, ApiResponse, saveNewTask, deleteTask, updateTask, seedMockTasks, clusterTasks } from './services/api'
 import AddNewTaskButton from './components/AddNewTaskButton';
 import AddNewTaskDialog from './components/AddNewTaskDialog';
 
@@ -56,20 +56,79 @@ function App() {
       // Refresh the task list to show the newly created task
       const updatedData = await fetchTasks();
       setData(updatedData);
+      setClusters(null);  // Clear clusters when tasks are modified
       handleClose();
     } catch (err) {
       console.error('Error saving task:', err);
     }
   };
 
+  const handleSeedData = async () => {
+    try {
+      await seedMockTasks();
+      const updated = await fetchTasks();
+      setData(updated);
+      setClusters(null);
+    } catch (err) {
+      console.error('Seeding failed:', err);
+    }
+  };
+
+  const handleClusterTasks = async () => {
+    try {
+      setClusteringLoading(true);
+      const result = await clusterTasks();
+      setClusters(result.clusters);
+    } catch (err) {
+      console.error('Clustering failed:', err);
+      alert(`Clustering failed: ${err}`);
+    } finally {
+      setClusteringLoading(false);
+    }
+  };
+
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [clusters, setClusters] = useState<{ [key: string]: any[] } | null>(null);
+  const [clusteringLoading, setClusteringLoading] = useState(false);
   return (
     <div className="App" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
       <h1>My amazing TODO app</h1>
 
-      {/* Display tasks list */}
-      {data && data.data && (
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+        <AddNewTaskButton onClick={handleOpen} />
+        <button onClick={handleSeedData} style={{ padding: '10px 20px', cursor: 'pointer' }}>
+          Load 70 Mock Tasks
+        </button>
+        <button 
+          onClick={handleClusterTasks} 
+          disabled={clusteringLoading}
+          style={{ padding: '10px 20px', cursor: 'pointer', opacity: clusteringLoading ? 0.5 : 1 }}
+        >
+          {clusteringLoading ? 'Clustering...' : 'Cluster Tasks with AI'}
+        </button>
+      </div>
+
+      {/* Display clustered tasks */}
+      {clusters && (
+        <div style={{ marginBottom: '20px', backgroundColor: '#f5f5f5', padding: '15px', borderRadius: '4px' }}>
+          <h2>Clustered Tasks (by AI)</h2>
+          {Object.entries(clusters).map(([category, tasks]) => (
+            <div key={category} style={{ marginBottom: '20px', borderLeft: '4px solid #007bff', paddingLeft: '15px' }}>
+              <h3 style={{ margin: '10px 0 10px 0' }}>{category} ({tasks.length})</h3>
+              {tasks.map((task: any) => (
+                <div key={task.id} style={{ padding: '8px', borderBottom: '1px solid #ddd', fontSize: '14px' }}>
+                  <strong>{task.title}</strong>: {task.description}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Display regular task list (only if not showing clusters) */}
+      {!clusters && data && data.data && (
         <div style={{ marginBottom: '20px' }}>
+          <h2>All Tasks</h2>
           {data.data.map((task: any) => (
             <div
               key={task.id}
@@ -159,7 +218,6 @@ function App() {
         </div>
       )}
 
-      <AddNewTaskButton onClick={handleOpen} />
       <AddNewTaskDialog
         open={open}
         onClose={handleClose}

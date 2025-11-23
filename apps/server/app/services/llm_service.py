@@ -1,0 +1,204 @@
+"""
+LLM Service - Abstraction layer for different LLM providers.
+Switch providers by changing LLM_PROVIDER in config.
+"""
+import os
+import json
+from abc import ABC, abstractmethod
+from typing import Dict, List
+
+
+class LLMProvider(ABC):
+    """Abstract base class for LLM providers."""
+    
+    @abstractmethod
+    def cluster_tasks(self, task_descriptions: List[str], task_titles: List[str]) -> Dict[str, List[str]]:
+        """
+        Cluster task titles into categories based on descriptions.
+        
+        Args:
+            task_descriptions: List of task descriptions
+            task_titles: List of corresponding task titles
+            
+        Returns:
+            Dict mapping category names to lists of task titles
+        """
+        pass
+
+
+class OpenAIProvider(LLMProvider):
+    """OpenAI GPT clustering provider."""
+    
+    def __init__(self):
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("openai package not installed. Run: pip install openai")
+        
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        
+        self.client = OpenAI(api_key=api_key)
+        self.model = "gpt-3.5-turbo"
+    
+    def cluster_tasks(self, task_descriptions: List[str], task_titles: List[str]) -> Dict[str, List[str]]:
+        """Call OpenAI API to cluster tasks."""
+        task_text = "\n".join([
+            f"- {title}: {desc}"
+            for title, desc in zip(task_titles, task_descriptions)
+        ])
+        
+        prompt = f"""You are a task organizer. Categorize the following tasks into logical groups/categories.
+Return ONLY a valid JSON object with categories as keys and lists of task titles as values.
+Categories should be general (Work, Home, Shopping, Health, Personal, Finance, Social, Other).
+Ensure every task title is included in exactly one category.
+
+Example output format:
+{{"Work": ["Fix login bug", "Code review PR"], "Home": ["Buy groceries", "Clean kitchen"]}}
+
+Tasks to categorize:
+{task_text}
+
+Respond with ONLY the JSON object, no markdown, no extra text:"""
+        
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=1024,
+        )
+        
+        llm_response = response.choices[0].message.content.strip()
+        
+        # Remove markdown code blocks if present
+        if llm_response.startswith("```"):
+            llm_response = llm_response.split("```")[1]
+            if llm_response.startswith("json"):
+                llm_response = llm_response[4:]
+        
+        clusters = json.loads(llm_response)
+        return clusters
+
+
+class OllamaProvider(LLMProvider):
+    """Ollama local LLM clustering provider."""
+    
+    def __init__(self):
+        import requests
+        self.requests = requests
+        self.base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+        self.model = os.getenv('OLLAMA_MODEL', 'llama2')
+        
+        # Test connection
+        try:
+            self.requests.get(f"{self.base_url}/api/tags", timeout=5)
+        except Exception as e:
+            raise ConnectionError(f"Cannot connect to Ollama at {self.base_url}. Is it running? Error: {e}")
+    
+    def cluster_tasks(self, task_descriptions: List[str], task_titles: List[str]) -> Dict[str, List[str]]:
+        """Call Ollama API to cluster tasks."""
+        task_text = "\n".join([
+            f"- {title}: {desc}"
+            for title, desc in zip(task_titles, task_descriptions)
+        ])
+        
+        prompt = f"""You are a task organizer. Categorize the following tasks into logical groups/categories.
+Return ONLY a valid JSON object with categories as keys and lists of task titles as values.
+Categories should be general (Work, Home, Shopping, Health, Personal, Finance, Social, Other).
+Ensure every task title is included in exactly one category.
+
+Example output format:
+{{"Work": ["Fix login bug", "Code review PR"], "Home": ["Buy groceries", "Clean kitchen"]}}
+
+Tasks to categorize:
+{task_text}
+
+Respond with ONLY the JSON object, no markdown, no extra text:"""
+        
+        response = self.requests.post(
+            f"{self.base_url}/api/generate",
+            json={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "temperature": 0.5,
+            },
+            timeout=60,
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        llm_response = result.get('response', '').strip()
+        
+        # Remove markdown code blocks if present
+        if llm_response.startswith("```"):
+            llm_response = llm_response.split("```")[1]
+            if llm_response.startswith("json"):
+                llm_response = llm_response[4:]
+        
+        clusters = json.loads(llm_response)
+        return clusters
+
+
+class LLMServiceFactory:
+    """Factory to create LLM provider based on configuration."""
+    
+    _provider_cache = None
+    
+    @classmethod
+    def get_provider(cls) -> LLMProvider:
+        """Get the configured LLM provider."""
+        if cls._provider_cache is not None:
+            return cls._provider_cache
+        
+        provider_name = os.getenv('LLM_PROVIDER', 'openai').lower()
+        
+        if provider_name == 'openai':
+            cls._provider_cache = OpenAIProvider()
+        elif provider_name == 'ollama':
+            cls._provider_cache = OllamaProvider()
+        else:
+            raise ValueError(f"Unknown LLM provider: {provider_name}. Use 'openai' or 'ollama'")
+        
+        return cls._provider_cache
+
+
+class TaskClusteringService:
+    """High-level service for task clustering."""
+    
+    @staticmethod
+    def cluster_tasks(tasks: List) -> Dict[str, List[dict]]:
+        """
+        Cluster tasks using the configured LLM provider.
+        
+        Args:
+            tasks: List of Task model objects
+            
+        Returns:
+            Dict mapping category names to lists of task dicts
+        """
+        if not tasks:
+            raise ValueError("No tasks to cluster")
+        
+        # Extract titles and descriptions
+        task_titles = [t.title for t in tasks]
+        task_descriptions = [t.description for t in tasks]
+        
+        # Get LLM provider and cluster
+        provider = LLMServiceFactory.get_provider()
+        clustered_titles = provider.cluster_tasks(task_descriptions, task_titles)
+        
+        # Map titles back to task objects
+        task_map = {t.title: t for t in tasks}
+        
+        # Build result with task dicts
+        result = {}
+        for category, titles in clustered_titles.items():
+            result[category] = [
+                task_map[title].to_dict()
+                for title in titles
+                if title in task_map
+            ]
+        
+        return result
