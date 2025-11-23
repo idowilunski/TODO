@@ -157,6 +157,9 @@ def seed_tasks():
                 # generated is list of {title, description}
                 mock_tasks = generated
             except Exception as e:
+                import traceback
+                logging.error(f"Error generating tasks with LLM: {e}")
+                logging.error(traceback.format_exc())
                 db.session.rollback()
                 return jsonify({
                     'status': 'error',

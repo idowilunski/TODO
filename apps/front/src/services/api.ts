@@ -96,9 +96,16 @@ export const saveNewTask = async (taskData: { title: string; description: string
   }
 };
 
-export const seedMockTasks = async (): Promise<ApiResponse> => {
+export const seedMockTasks = async (source?: string, n?: number): Promise<ApiResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/seed`, {
+    let url = `${API_BASE_URL}/api/tasks/seed`;
+    const params = new URLSearchParams();
+    if (source) params.set('source', source);
+    if (n) params.set('n', String(n));
+    const query = params.toString();
+    if (query) url += `?${query}`;
+
+    const response = await fetch(url, {
       method: 'POST',
     });
 

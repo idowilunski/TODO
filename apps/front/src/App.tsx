@@ -64,13 +64,19 @@ function App() {
   };
 
   const handleSeedData = async () => {
+    console.log('handleSeedData called')
     try {
-      await seedMockTasks();
+      // Request LLM-generated mock tasks (source=llm) and create 70 tasks
+      const res = await seedMockTasks('llm', 20);
+      console.log('seedMockTasks response:', res);
       const updated = await fetchTasks();
       setData(updated);
       setClusters(null);
+      // Removed alert popup after seeding
+      await fetchTasks();
     } catch (err) {
       console.error('Seeding failed:', err);
+      alert('Seeding failed: ' + (err as any).toString());
     }
   };
 
@@ -96,8 +102,8 @@ function App() {
 
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
         <AddNewTaskButton onClick={handleOpen} />
-        <button onClick={handleSeedData} style={{ padding: '10px 20px', cursor: 'pointer' }}>
-          Load 70 Mock Tasks
+          <button onClick={handleSeedData} style={{ padding: '10px 20px', cursor: 'pointer' }}>
+            Load 20 Mock Tasks
         </button>
         <button 
           onClick={handleClusterTasks} 

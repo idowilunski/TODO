@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, List
 import difflib
 import logging
+import random
+import time
 
 
 class LLMProvider(ABC):
@@ -93,19 +95,24 @@ Respond with ONLY the JSON object, no markdown, no extra text:"""
         Returns:
             List of dicts: [{"title": "...", "description": "..."}, ...]
         """
+        seed = random.randint(0, 10**9)
         prompt = f"""You are a task generator. Produce {n} realistic, concise todo tasks.
-Return a JSON array of objects, each with fields `title` and `description`.
-Titles should be short (3-6 words) and unique. Descriptions should be 5-20 words.
-Return ONLY the JSON array, no markdown or explanatory text.
+    Return a JSON array of objects, each with fields `title` and `description`.
+    Titles should be short (3-6 words) and unique. Descriptions should be 5-20 words.
+    Do not include the seed shown below in the output; it is only to encourage variance between calls.
 
-Example:
-[{{"title": "Buy groceries", "description": "Milk, eggs, bread"}}, {{"title": "Fix login bug", "description": "Users cannot reset password"}}]
-"""
+    Seed: {seed}
+
+    Return ONLY the JSON array, no markdown or explanatory text.
+
+    Example:
+    [{{"title": "Buy groceries", "description": "Milk, eggs, bread"}}, {{"title": "Fix login bug", "description": "Users cannot reset password"}}]
+    """
 
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+            temperature=0.9,
             max_tokens=800,
         )
 
@@ -115,12 +122,23 @@ Example:
             if llm_response.startswith("json"):
                 llm_response = llm_response[4:]
 
-        tasks = json.loads(llm_response)
+        logging.info("Raw LLM response for generate_tasks: %r", llm_response)
+        try:
+            tasks = json.loads(llm_response)
+        except Exception as e:
+            logging.exception("Failed to parse LLM response for generate_tasks: %s", llm_response)
+            raise
         # Basic validation: ensure list of objects with title/description
         out = []
         for t in tasks:
             if isinstance(t, dict) and 'title' in t and 'description' in t:
                 out.append({'title': str(t['title']).strip(), 'description': str(t['description']).strip()})
+        # Log a short sample for debugging (do not log secrets)
+        try:
+            sample = [x['title'] for x in out[:5]]
+        except Exception:
+            sample = []
+        logging.info('OpenAIProvider.generate_tasks seed=%s generated=%s sample=%s', seed, len(out), sample)
         return out
 
 
@@ -185,9 +203,14 @@ Respond with ONLY the JSON object, no markdown, no extra text:"""
 
     def generate_tasks(self, n: int) -> List[Dict[str, str]]:
         """Ask Ollama to generate `n` mock tasks and parse JSON array response."""
+        seed = random.randint(0, 10**9)
         prompt = f"""You are a task generator. Produce {n} realistic, concise todo tasks.
 Return a JSON array of objects, each with fields `title` and `description`.
 Titles should be short (3-6 words) and unique. Descriptions should be 5-20 words.
+Do not include the seed shown below in the output; it is only to encourage variance between calls.
+
+Seed: {seed}
+
 Return ONLY the JSON array, no markdown or explanatory text.
 
 Example:
@@ -200,7 +223,7 @@ Example:
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
-                "temperature": 0.7,
+                "temperature": 0.9,
             },
             timeout=60,
         )
@@ -213,11 +236,20 @@ Example:
             if llm_response.startswith("json"):
                 llm_response = llm_response[4:]
 
-        tasks = json.loads(llm_response)
+        try:
+            tasks = json.loads(llm_response)
+        except Exception as e:
+            logging.exception("Failed to parse Ollama response for generate_tasks: %s", llm_response)
+            raise
         out = []
         for t in tasks:
             if isinstance(t, dict) and 'title' in t and 'description' in t:
                 out.append({'title': str(t['title']).strip(), 'description': str(t['description']).strip()})
+        try:
+            sample = [x['title'] for x in out[:5]]
+        except Exception:
+            sample = []
+        logging.info('OllamaProvider.generate_tasks seed=%s generated=%s sample=%s', seed, len(out), sample)
         return out
 
 
