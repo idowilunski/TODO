@@ -3,6 +3,7 @@ Task routes blueprint.
 Handles all /api/tasks endpoints.
 """
 from flask import Blueprint, jsonify, request
+import logging
 from app.services import TaskService
 from app.services.llm_service import TaskClusteringService
 from app.models import Task
@@ -266,7 +267,10 @@ def cluster_tasks():
         }), 200
     
     except Exception as e:
+        # Log full exception with stack trace for debugging
+        logging.exception("Error clustering tasks")
+        # Return a concise message to the client; check server logs for details
         return jsonify({
             'status': 'error',
-            'message': f'Error clustering tasks: {str(e)}'
+            'message': 'Error clustering tasks; see server logs for details.'
         }), 500
