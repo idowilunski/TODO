@@ -66,7 +66,7 @@ function App() {
   const handleSeedData = async () => {
     console.log('handleSeedData called')
     try {
-      // Request LLM-generated mock tasks (source=llm) and create 70 tasks
+      // Request LLM-generated mock tasks (source=llm) and create 20 tasks
       const res = await seedMockTasks('llm', 20);
       console.log('seedMockTasks response:', res);
       const updated = await fetchTasks();
