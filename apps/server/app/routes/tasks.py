@@ -3,6 +3,7 @@ Task routes blueprint.
 Handles all /api/tasks endpoints.
 """
 from flask import Blueprint, jsonify, request
+
 import logging
 from app.services import TaskService
 from app.services.llm_service import TaskClusteringService
@@ -147,7 +148,7 @@ def seed_tasks():
 
         # If caller requests LLM-generated tasks, use the configured provider
         use_llm = request.args.get('source', '').lower() == 'llm'
-        count = int(request.args.get('n', 70))
+        count = int(request.args.get('n', 20))  # Default to 20 tasks
         mock_tasks = []
         if use_llm:
             try:
@@ -166,6 +167,13 @@ def seed_tasks():
                     'message': f'Error generating tasks with LLM: {str(e)}'
                 }), 500
         else:
+            # No LLM - return error (only LLM generation supported)
+            return jsonify({
+                'status': 'error',
+                'message': 'Only LLM task generation is supported. Use ?source=llm'
+            }), 400
+            
+            # Old hardcoded tasks removed - keeping structure for reference
             mock_tasks = [
                 # Work tasks
                 {"title": "Fix login bug", "description": "Users can't reset password"},
@@ -229,14 +237,7 @@ def seed_tasks():
             {"title": "Send thank you cards", "description": "Wedding guests"},
             {"title": "RSVP to birthday", "description": "John's party on 15th"},
             {"title": "Organize team outing", "description": "Book hiking trip"},
-        ]
-        
-        # Add more to reach ~70
-        for i in range(25):
-            mock_tasks.append({
-                "title": f"Task {i+1}",
-                "description": f"Sample task #{i+1} for testing"
-            })
+        ]  # This block is now unreachable due to error return above
         
         # Create and commit tasks
         for task_data in mock_tasks:

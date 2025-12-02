@@ -49,44 +49,51 @@ class OpenAIProvider(LLMProvider):
             raise ValueError("OPENAI_API_KEY environment variable not set")
         
         self.client = OpenAI(api_key=api_key)
-        self.model = "gpt-3.5-turbo"
+        self.model = "gpt-3.5-turbo-1106"  # Newer model with JSON mode support
     
     def cluster_tasks(self, task_descriptions: List[str], task_titles: List[str]) -> Dict[str, List[str]]:
         """Call OpenAI API to cluster tasks."""
-        task_text = "\n".join([
-            f"- {title}: {desc}"
-            for title, desc in zip(task_titles, task_descriptions)
-        ])
+        # Format tasks concisely (title only - description adds noise for clustering)
+        task_text = "\n".join([f"- {title}" for title in task_titles])
         
-        prompt = f"""You are a task organizer. Categorize the following tasks into logical groups/categories.
-Return ONLY a valid JSON object with categories as keys and lists of task titles as values.
-Categories should be general (Work, Home, Shopping, Health, Personal, Finance, Social, Other).
-Ensure every task title is included in exactly one category.
-
-Example output format:
-{{"Work": ["Fix login bug", "Code review PR"], "Home": ["Buy groceries", "Clean kitchen"]}}
-
-Tasks to categorize:
+        # System role: define behavior and output format (saves ~40 tokens vs user prompt)
+        system_message = "Categorize tasks into groups. Return JSON: {\"Category\": [\"task1\", \"task2\"]}"
+        
+        # User prompt: minimal, just the data and constraints
+        user_prompt = f"""Tasks:
 {task_text}
 
-Respond with ONLY the JSON object, no markdown, no extra text:"""
+Categories: Work, Home, Shopping, Health, Personal, Finance, Social, Other
+Include all tasks exactly once."""
         
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"},  # Guarantees valid JSON (no markdown)
+            temperature=0.5,  # Lower temp = more consistent categorization
             max_tokens=1024,
         )
         
         llm_response = response.choices[0].message.content.strip()
-        
-        # Remove markdown code blocks if present
-        if llm_response.startswith("```"):
-            llm_response = llm_response.split("```")[1]
-            if llm_response.startswith("json"):
-                llm_response = llm_response[4:]
-        
         clusters = json.loads(llm_response)
+        
+        # Guardrail: Validate all tasks are categorized
+        categorized_titles = set()
+        for titles in clusters.values():
+            categorized_titles.update(titles)
+        
+        missing = set(task_titles) - categorized_titles
+        if missing:
+            logging.warning(f"Clustering missed {len(missing)} tasks: {list(missing)[:5]}")
+            # Auto-recovery: assign missing tasks to "Other" category
+            if "Other" not in clusters:
+                clusters["Other"] = []
+            clusters["Other"].extend(list(missing))
+            logging.info(f"Auto-recovered {len(missing)} tasks to 'Other' category")
+        
         return clusters
 
     def generate_tasks(self, n: int) -> List[Dict[str, str]]:
@@ -96,39 +103,50 @@ Respond with ONLY the JSON object, no markdown, no extra text:"""
             List of dicts: [{"title": "...", "description": "..."}, ...]
         """
         seed = random.randint(0, 10**9)
-        prompt = f"""You are a task generator. Produce {n} realistic, concise todo tasks.
-    Return a JSON array of objects, each with fields `title` and `description`.
-    Titles should be short (3-6 words) and unique. Descriptions should be 5-20 words.
-    Do not include the seed shown below in the output; it is only to encourage variance between calls.
+        
+        # System message: define behavior and output format
+        system_message = "You are a todo task generator. Return JSON object with 'tasks' array containing task objects with 'title' and 'description' fields."
+        
+        # User prompt: clear instructions with variety seed
+        user_prompt = f"""Generate {n} realistic todo tasks.
+Each task needs:
+- title: 3-6 words
+- description: 5-20 words
 
-    Seed: {seed}
-
-    Return ONLY the JSON array, no markdown or explanatory text.
-
-    Example:
-    [{{"title": "Buy groceries", "description": "Milk, eggs, bread"}}, {{"title": "Fix login bug", "description": "Users cannot reset password"}}]
-    """
+Make tasks diverse (work, home, shopping, health, personal, etc.)
+Seed for variety: {seed}"""
 
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"} if "gpt-3.5-turbo-1106" in self.model or "gpt-4" in self.model else None,
             temperature=0.9,
             max_tokens=800,
         )
 
         llm_response = response.choices[0].message.content.strip()
-        if llm_response.startswith("```"):
-            llm_response = llm_response.split("```")[1]
-            if llm_response.startswith("json"):
-                llm_response = llm_response[4:]
-
-        logging.info("Raw LLM response for generate_tasks: %r", llm_response)
+        
+        logging.info("Raw LLM response for generate_tasks: %r", llm_response[:200])
         try:
-            tasks = json.loads(llm_response)
+            parsed = json.loads(llm_response)
+            
+            # Handle both formats: {"tasks": [...]} or direct array [...]
+            if isinstance(parsed, dict) and 'tasks' in parsed:
+                tasks = parsed['tasks']
+            elif isinstance(parsed, list):
+                tasks = parsed
+            else:
+                logging.error(f"Unexpected JSON structure: {type(parsed)}")
+                raise ValueError(f"Expected object with 'tasks' key or array, got: {type(parsed)}")
+                
         except Exception as e:
-            logging.exception("Failed to parse LLM response for generate_tasks: %s", llm_response)
+            logging.exception("Failed to parse LLM response for generate_tasks: %s", llm_response[:500])
             raise
-        # Basic validation: ensure list of objects with title/description
+            
+        # Validate and extract tasks
         out = []
         for t in tasks:
             if isinstance(t, dict) and 'title' in t and 'description' in t:
