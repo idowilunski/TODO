@@ -64,6 +64,8 @@ class OpenAIProvider(LLMProvider):
 {task_text}
 
 Categories: Work, Home, Shopping, Health, Personal, Finance, Social, Other
+- Home: cleaning, repairs, decor, organizing, maintenance, household chores
+- Personal: learning, hobbies, creative projects, self-improvement
 Include all tasks exactly once."""
         
         response = self.client.chat.completions.create(
@@ -73,7 +75,7 @@ Include all tasks exactly once."""
                 {"role": "user", "content": user_prompt}
             ],
             response_format={"type": "json_object"},  # Guarantees valid JSON (no markdown)
-            temperature=0.5,  # Lower temp = more consistent categorization
+            temperature=0.3,  # Lower temp = more consistent categorization
             max_tokens=1024,
         )
         

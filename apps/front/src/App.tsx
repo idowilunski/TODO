@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchTasks, ApiResponse, saveNewTask, deleteTask, updateTask, seedMockTasks, clusterTasks } from './services/api'
+import { fetchTasks, ApiResponse, saveNewTask, deleteTask, deleteAllTasks, updateTask, seedMockTasks, clusterTasks, researchTask } from './services/api'
 import AddNewTaskButton from './components/AddNewTaskButton';
 import AddNewTaskDialog from './components/AddNewTaskDialog';
 
@@ -71,9 +71,8 @@ function App() {
       console.log('seedMockTasks response:', res);
       const updated = await fetchTasks();
       setData(updated);
-      setClusters(null);
+      // Don't clear clusters - let user see updated count
       // Removed alert popup after seeding
-      await fetchTasks();
     } catch (err) {
       console.error('Seeding failed:', err);
       alert('Seeding failed: ' + (err as any).toString());
@@ -96,6 +95,61 @@ function App() {
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [clusters, setClusters] = useState<{ [key: string]: any[] } | null>(null);
   const [clusteringLoading, setClusteringLoading] = useState(false);
+  const [researchingTaskId, setResearchingTaskId] = useState<number | null>(null);
+
+  const handleResearch = async (taskId: number) => {
+    try {
+      setResearchingTaskId(taskId);
+      
+      // Start research (returns immediately)
+      await researchTask(taskId);
+      
+      // Poll for completion
+      const pollInterval = setInterval(async () => {
+        const updated = await fetchTasks();
+        setData(updated);
+        
+        const task = updated.data?.find((t: any) => t.id === taskId);
+        if (task && (task.research_status === 'completed' || task.research_status === 'failed')) {
+          clearInterval(pollInterval);
+          setResearchingTaskId(null);
+          
+          if (task.research_status === 'failed') {
+            alert('Research failed: ' + (task.research_result?.error || 'Unknown error'));
+          }
+        }
+      }, 2000);  // Poll every 2 seconds
+      
+      // Safety timeout after 60 seconds
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        setResearchingTaskId(null);
+      }, 60000);
+      
+    } catch (err) {
+      console.error('Research failed:', err);
+      alert('Research failed: ' + (err as any).toString());
+      setResearchingTaskId(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!window.confirm('Are you sure you want to delete all tasks? This cannot be undone.')) {
+      return;
+    }
+    try {
+      // Bulk delete - single API call!
+      await deleteAllTasks();
+      
+      // Refresh list and clear clusters
+      const updated = await fetchTasks();
+      setData(updated);
+      setClusters(null);
+    } catch (err) {
+      console.error('Delete all failed:', err);
+      alert('Failed to delete all tasks: ' + (err as any).toString());
+    }
+  };
   return (
     <div className="App" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
       <h1>My amazing TODO app</h1>
@@ -112,12 +166,26 @@ function App() {
         >
           {clusteringLoading ? 'Clustering...' : 'Cluster Tasks with AI'}
         </button>
+        <button 
+          onClick={handleDeleteAll}
+          style={{ padding: '10px 20px', cursor: 'pointer', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}
+        >
+          Delete All Tasks
+        </button>
       </div>
 
       {/* Display clustered tasks */}
       {clusters && (
         <div style={{ marginBottom: '20px', backgroundColor: '#f5f5f5', padding: '15px', borderRadius: '4px' }}>
-          <h2>Clustered Tasks (by AI)</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h2 style={{ margin: 0 }}>Clustered Tasks (by AI)</h2>
+            <button 
+              onClick={() => setClusters(null)}
+              style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}
+            >
+              Back to Tasks List
+            </button>
+          </div>
           {Object.entries(clusters).map(([category, tasks]) => (
             <div key={category} style={{ marginBottom: '20px', borderLeft: '4px solid #007bff', paddingLeft: '15px' }}>
               <h3 style={{ margin: '10px 0 10px 0' }}>{category} ({tasks.length})</h3>
@@ -172,6 +240,13 @@ function App() {
                     Update
                   </button>
                   <button
+                    onClick={() => handleResearch(task.id)}
+                    disabled={researchingTaskId === task.id}
+                    style={{ cursor: 'pointer', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', padding: '6px 12px' }}
+                  >
+                    {researchingTaskId === task.id ? 'Researching...' : '🔍 Research Item'}
+                  </button>
+                  <button
                     onClick={async () => {
                       // Optimistic mark done
                       setData(prev => {
@@ -219,6 +294,17 @@ function App() {
                   </button>
                 </div>
               </div>
+              {task.research_result && (
+                <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#e7f3ff', borderRadius: '4px', borderLeft: '4px solid #007bff' }}>
+                  <strong>🤖 Agent Research:</strong>
+                  <div style={{ marginTop: '8px', whiteSpace: 'pre-wrap' }}>
+                    {task.research_result.recommendation}
+                  </div>
+                  <small style={{ color: '#666', marginTop: '8px', display: 'block' }}>
+                    Researched at: {new Date(task.research_result.timestamp).toLocaleString()}
+                  </small>
+                </div>
+              )}
             </div>
           ))}
         </div>

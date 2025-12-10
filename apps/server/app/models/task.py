@@ -12,6 +12,8 @@ class Task(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=False)
     completed = db.Column(db.Boolean, default=False, nullable=False)
+    research_result = db.Column(db.JSON, nullable=True)  # Stores agent research: {recommendation, iterations, timestamp}
+    research_status = db.Column(db.String(20), default='none', nullable=False)  # none | pending | processing | completed | failed
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -25,6 +27,8 @@ class Task(db.Model):
             'title': self.title,
             'description': self.description,
             'completed': self.completed,
+            'research_result': self.research_result,
+            'research_status': self.research_status,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

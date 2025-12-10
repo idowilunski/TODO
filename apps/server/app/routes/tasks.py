@@ -3,10 +3,13 @@ Task routes blueprint.
 Handles all /api/tasks endpoints.
 """
 from flask import Blueprint, jsonify, request
+from datetime import datetime
+import threading
 
 import logging
 from app.services import TaskService
 from app.services.llm_service import TaskClusteringService
+from app.services.agent_service import AgentServiceFactory
 from app.models import Task
 from app.extensions import db
 
@@ -138,13 +141,33 @@ def delete_task(task_id):
         }), 500
 
 
+@tasks_bp.route('/bulk-delete', methods=['DELETE'])
+def bulk_delete_tasks():
+    """Delete all tasks in one database query."""
+    try:
+        count = Task.query.delete()
+        db.session.commit()
+        
+        logging.info(f"Bulk deleted {count} tasks")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted {count} tasks',
+            'count': count
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error bulk deleting tasks: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error deleting tasks: {str(e)}'
+        }), 500
+
+
 @tasks_bp.route('/seed', methods=['POST'])
 def seed_tasks():
     """Generate mock tasks for testing clustering."""
     try:
-        # Delete existing tasks (optional)
-        Task.query.delete()
-        db.session.commit()
 
         # If caller requests LLM-generated tasks, use the configured provider
         use_llm = request.args.get('source', '').lower() == 'llm'
@@ -295,4 +318,110 @@ def cluster_tasks():
         return jsonify({
             'status': 'error',
             'message': 'Error clustering tasks; see server logs for details.'
+        }), 500
+
+
+def _research_task_background(task_id: int, app):
+    """Background worker to run agent research."""
+    with app.app_context():
+        try:
+            task = Task.query.get(task_id)
+            if not task:
+                logging.error(f"Task {task_id} not found in background worker")
+                return
+            
+            # Update status
+            task.research_status = 'processing'
+            db.session.commit()
+            
+            logging.info(f"[Background] Starting agent research for task {task_id}: {task.title}")
+            
+            # Run the agent
+            agent = AgentServiceFactory.get_agent()
+            result = agent.research_task(task.title, task.description)
+            
+            # Store result
+            task.research_result = {
+                'recommendation': result.get('recommendation'),
+                'iterations': result.get('iterations'),
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            task.research_status = 'completed'
+            db.session.commit()
+            
+            logging.info(f"[Background] Research completed for task {task_id}")
+            
+        except Exception as e:
+            logging.exception(f"[Background] Error researching task {task_id}")
+            try:
+                task = Task.query.get(task_id)
+                if task:
+                    task.research_status = 'failed'
+                    task.research_result = {
+                        'error': str(e),
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                    db.session.commit()
+            except:
+                pass
+
+
+@tasks_bp.route('/<int:task_id>/research', methods=['POST'])
+def research_task(task_id):
+    """
+    Start async agent research on a task.
+    Returns immediately with status='pending'.
+    Client should poll GET /tasks/{id} to check research_status.
+    
+    Returns: {
+        status: 'success',
+        message: 'Research started',
+        data: task with research_status='pending'
+    }
+    """
+    try:
+        # Get the task
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({
+                'status': 'error',
+                'message': 'Task not found'
+            }), 404
+        
+        # Check if already processing
+        if task.research_status == 'processing':
+            return jsonify({
+                'status': 'info',
+                'message': 'Research already in progress',
+                'data': task.to_dict()
+            }), 200
+        
+        # Mark as pending
+        task.research_status = 'pending'
+        task.research_result = None  # Clear old results
+        db.session.commit()
+        
+        logging.info(f"Starting background research for task {task_id}: {task.title}")
+        
+        # Start background thread
+        from flask import current_app
+        thread = threading.Thread(
+            target=_research_task_background,
+            args=(task_id, current_app._get_current_object())
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Research started',
+            'data': task.to_dict()
+        }), 202  # 202 Accepted
+    
+    except Exception as e:
+        logging.exception(f"Error starting research for task {task_id}")
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to start research: {str(e)}'
         }), 500

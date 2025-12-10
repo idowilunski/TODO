@@ -3,6 +3,7 @@ Application factory.
 Creates and configures Flask app instance.
 """
 from flask import Flask
+from pathlib import Path
 from app.config import config
 from app.extensions import db, cors
 from app.routes import register_blueprints
@@ -31,6 +32,11 @@ def create_app(config_name='development'):
 
     # Create database tables
     with app.app_context():
+        # Ensure SQLite database directory exists (avoids 'unable to open database file')
+        uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if uri.startswith('sqlite:///'):
+            db_path = Path(uri.replace('sqlite:///', ''))
+            db_path.parent.mkdir(parents=True, exist_ok=True)
         db.create_all()
         print("Database tables created successfully!")
 

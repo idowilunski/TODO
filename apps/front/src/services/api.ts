@@ -5,6 +5,13 @@ export interface Task {
   title: string;
   description: string;
   completed: boolean;
+  research_result?: {
+    recommendation: string;
+    iterations: number;
+    timestamp: string;
+    error?: string;
+  } | null;
+  research_status: 'none' | 'pending' | 'processing' | 'completed' | 'failed';
   created_at: string;
   updated_at: string | null;
 }
@@ -74,6 +81,24 @@ export const deleteTask = async (id: number): Promise<ApiResponse> => {
   }
 };
 
+export const deleteAllTasks = async (): Promise<ApiResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/bulk-delete`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data: ApiResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error deleting all tasks:', error);
+    throw error;
+  }
+};
+
 export const saveNewTask = async (taskData: { title: string; description: string; }): Promise<ApiResponse> => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/tasks`, {
@@ -134,6 +159,24 @@ export const clusterTasks = async (): Promise<any> => {
     return response.json();
   } catch (error) {
     console.error('Error clustering tasks:', error);
+    throw error;
+  }
+};
+
+export const researchTask = async (taskId: number): Promise<ApiResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/research`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error researching task:', error);
     throw error;
   }
 };
