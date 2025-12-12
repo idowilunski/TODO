@@ -425,3 +425,52 @@ def research_task(task_id):
             'status': 'error',
             'message': f'Failed to start research: {str(e)}'
         }), 500
+
+@tasks_bp.route('/schedule-data', methods=['GET'])
+def get_schedule_data():
+    """
+    Get tasks formatted for Lambda schedule generator.
+    Returns incomplete tasks with relevant metadata.
+    """
+    try:
+        # Get all incomplete tasks
+        tasks = Task.query.filter_by(completed=False).all()
+        
+        schedule_tasks = []
+        for task in tasks:
+            task_data = {
+                'id': task.id,
+                'title': task.title,
+                'description': task.description,
+                'duration': 60,  # Default 60 minutes, can add duration field later
+                'requires_business_hours': False,  # Default, can be inferred from research
+                'location': None
+            }
+            
+            # Parse research results if available
+            if task.research_result:
+                try:
+                    research = task.research_result
+                    # Extract location if found
+                    if 'location' in research.lower():
+                        task_data['requires_business_hours'] = True
+                    # Could extract more metadata from research
+                except:
+                    pass
+            
+            schedule_tasks.append(task_data)
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'tasks': schedule_tasks,
+                'count': len(schedule_tasks)
+            }
+        }), 200
+        
+    except Exception as e:
+        logging.exception("Error fetching schedule data")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error retrieving schedule data: {str(e)}'
+        }), 500
