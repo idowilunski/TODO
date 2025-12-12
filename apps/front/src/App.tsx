@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { fetchTasks, ApiResponse, saveNewTask, deleteTask, deleteAllTasks, updateTask, seedMockTasks, clusterTasks, researchTask } from './services/api'
 import AddNewTaskButton from './components/AddNewTaskButton';
 import AddNewTaskDialog from './components/AddNewTaskDialog';
+import Schedules from './components/Schedules';
 
 function App() {
+  const [currentView, setCurrentView] = useState<'tasks' | 'schedules'>('tasks');
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +156,43 @@ function App() {
     <div className="App" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
       <h1>My amazing TODO app</h1>
 
+      {/* Navigation Tabs */}
+      <div style={{ marginBottom: '20px', borderBottom: '2px solid #ddd' }}>
+        <button
+          onClick={() => setCurrentView('tasks')}
+          style={{
+            padding: '10px 20px',
+            cursor: 'pointer',
+            border: 'none',
+            borderBottom: currentView === 'tasks' ? '3px solid #007bff' : 'none',
+            backgroundColor: 'transparent',
+            fontWeight: currentView === 'tasks' ? 'bold' : 'normal',
+            color: currentView === 'tasks' ? '#007bff' : '#666'
+          }}
+        >
+          📋 Tasks
+        </button>
+        <button
+          onClick={() => setCurrentView('schedules')}
+          style={{
+            padding: '10px 20px',
+            cursor: 'pointer',
+            border: 'none',
+            borderBottom: currentView === 'schedules' ? '3px solid #007bff' : 'none',
+            backgroundColor: 'transparent',
+            fontWeight: currentView === 'schedules' ? 'bold' : 'normal',
+            color: currentView === 'schedules' ? '#007bff' : '#666'
+          }}
+        >
+          📅 Daily Schedules
+        </button>
+      </div>
+
+      {/* Conditional View Rendering */}
+      {currentView === 'schedules' ? (
+        <Schedules />
+      ) : (
+        <>
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
         <AddNewTaskButton onClick={handleOpen} />
           <button onClick={handleSeedData} style={{ padding: '10px 20px', cursor: 'pointer' }}>
@@ -319,6 +358,8 @@ function App() {
         onTitleChange={setTaskTitle}
         onDescriptionChange={setTaskDescription}
       />
+      </>
+      )}
     </div>
   );
 }
