@@ -1,9 +1,16 @@
-    # --- IDE ---
-.idea/
-.vscode/
-*.iml
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
-# --- Python caches & builds ---
+# Environment / secrets
+.env
+.env.*
+*.env
+apps/server/.env
+
+# Python cache and builds
 __pycache__/
 *.py[cod]
 *$py.class
@@ -12,22 +19,24 @@ build/
 .eggs/
 *.egg-info/
 
-# --- Virtual environments ---
-.venv/
-venv/
-env/
-ENV/
+# Flask instance DB
+apps/server/instance/*.db
 
-# --- Environment / secrets ---
-.env
-.env.*
-*.env
+# Node modules (frontend)
+apps/front/node_modules/
 
-# --- OS noise ---
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS and misc
 .DS_Store
 Thumbs.db
+*.bak
+*.orig
 
-# --- Test & tooling caches ---
+# Test & tooling caches
 .pytest_cache/
 .coverage
 .coverage.*
@@ -36,10 +45,9 @@ htmlcov/
 .nox/
 .cache/
 
-# --- Jupyter ---
+# Jupyter
 .ipynb_checkpoints/
-*.ipynb_*
 
-# --- Misc ---
-*.bak
-*.orig
+# AWS Lambda
+lambda_layer/
+*.zip
